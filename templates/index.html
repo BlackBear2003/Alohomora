@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片下载器</title>
+    <link href="/static/styles.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.9.1/dist/jszip.min.js"></script>
+</head>
+<body>
+<div class="container">
+    <h1>Alohomora～</h1>
+    <input type="text" id="url" placeholder="请输入 URL"/>
+    <button onclick="fetchImages()">crawl</button>
+
+    <div id="loading" style="display:none;">fetching...</div>
+
+    <div id="images" style="display:none;">
+        <h2>Images</h2>
+        <button id="download-all" style="display:none;" onclick="downloadAllImages()">下载所有图片为 ZIP</button>
+        <div id="image-list"></div>
+    </div>
+</div>
+
+<script>
+    function fetchImages() {
+        const url = document.getElementById("url").value;
+        const loading = document.getElementById("loading");
+        const imagesDiv = document.getElementById("images");
+        const imageListDiv = document.getElementById("image-list");
+        const downloadAllButton = document.getElementById("download-all");
+
+        if (!url) {
+            alert("请输入一个 URL！");
+            return;
+        }
+
+        // 显示加载状态
+        loading.style.display = "block";
+        imagesDiv.style.display = "none";
+        imageListDiv.innerHTML = "";
+
+        // 请求后端接口
+        fetch(`/api/crawl/note?url=${encodeURIComponent(url)}`)
+            .then(response => response.json())
+            .then(data => {
+                loading.style.display = "none";
+                if (data.status === "success" && data.data.length > 0) {
+                    imagesDiv.style.display = "block";
+                    data.data.forEach(imgUrl => {
+                        const imgElement = document.createElement("img");
+                        imgElement.src = imgUrl;
+                        imgElement.alt = "爬取的图片";
+                        imgElement.style.width = "200px";
+                        imgElement.style.margin = "10px";
+                        imgElement.onclick = () => downloadImage(imgUrl);
+                        imageListDiv.appendChild(imgElement);
+                    });
+                    // 显示下载全部按钮
+                    downloadAllButton.style.display = "block";
+                } else {
+                    imageListDiv.innerHTML = "没有找到图片。";
+                }
+            })
+            .catch(error => {
+                loading.style.display = "none";
+                alert("获取图片失败：" + error);
+            });
+    }
+
+    function downloadImage(imageUrl) {
+        fetch(imageUrl)
+            .then(response => response.blob())  // 获取图片的 Blob 数据
+            .then(blob => {
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);  // 创建 Blob 的 URL
+                link.href = url;
+                link.download = imageUrl.split("/").pop(); // 使用 URL 最后部分作为文件名
+                link.click();
+                URL.revokeObjectURL(url);  // 下载后释放 Blob URL
+            })
+            .catch(err => console.error('下载失败:', err));
+    }
+
+    // 下载所有图片并打包为 ZIP
+    function downloadAllImages() {
+        const zip = new JSZip();  // 创建一个 JSZip 实例
+        const imageElements = document.querySelectorAll("#image-list img");
+
+        const downloadPromises = Array.from(imageElements).map((img, index) => {
+            return fetch(img.src)
+                .then(response => response.blob())  // 获取图片的 Blob 数据
+                .then(blob => {
+                    // 将图片添加到 ZIP 文件中，使用图片的 alt 属性作为文件名
+                    zip.file(img.alt || `image_${index}.jpg`, blob);
+                });
+        });
+
+        // 等待所有图片都被添加到 ZIP 后，再生成并下载 ZIP 文件
+        Promise.all(downloadPromises).then(() => {
+            zip.generateAsync({ type: "blob" }).then(function(content) {
+                // 生成的 ZIP 文件
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(content);
+                link.download = Date.now().toString() + ".zip";  // ZIP 文件名
+                link.click();
+            });
+        }).catch(err => console.error('打包失败:', err));
+    }
+</script>
+</body>
+</html>
